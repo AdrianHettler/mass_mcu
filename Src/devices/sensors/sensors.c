@@ -50,7 +50,7 @@ float MCP9804_temperature_read(I2C_HandleTypeDef *hi2c) {
  */
 
 float ACS712_current_read(I2C_HandleTypeDef *hi2c) {
-#define sensitivity 0.1f
+#define sensitivity 0.185f
 #define zero_current_output 2.461f
 
 	float adc_out = MCP3425_adc_read_16bit(hi2c);

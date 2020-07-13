@@ -19,20 +19,19 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include <ethernet/lwip.h>
-#include <sd_card/fatfs.h>
-#include <signal_protocols/gpio.h>
-#include <signal_protocols/i2c.h>
-#include <signal_protocols/spi.h>
-#include <signal_protocols/usart.h>
 #include "main.h"
-#include "devices/camera/camera.h"
-#include "devices/sensors/sensors.h"
-
+#include "fatfs.h"
+#include "i2c.h"
+#include "lwip.h"
+#include "spi.h"
+#include "usart.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "message_ids.h"
+#include "devices/adc/adc.h"
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -122,121 +121,135 @@ FRESULT write_sd_card(char* file_name,void* src,int size)
   * @retval int
   */
 
+float rd(float value)
+{
+	int val = (int)(value * 100.f);
+	return ((float)(val))/100;
+}
+
+
 
 int main(void)
- {
-	/* USER CODE BEGIN 1 */
+{
+  /* USER CODE BEGIN 1 */
 
-	/* USER CODE END 1 */
+  /* USER CODE END 1 */
 
-	/* MCU Configuration--------------------------------------------------------*/
+  /* MCU Configuration--------------------------------------------------------*/
 
-	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-	HAL_Init();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-	/* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-	/* USER CODE END Init */
+  /* USER CODE END Init */
 
-	/* Configure the system clock */
-	SystemClock_Config();
+  /* Configure the system clock */
+  SystemClock_Config();
 
-	/* USER CODE BEGIN SysInit */
+  /* USER CODE BEGIN SysInit */
 
-	/* USER CODE END SysInit */
+  /* USER CODE END SysInit */
 
-	/* Initialize all configured peripherals */
-	MX_GPIO_Init();
-	MX_LWIP_Init();
-	MX_I2C1_Init();
-	MX_SPI1_Init();
-	MX_UART4_Init();
-	MX_FATFS_Init();
-
-	/* USER CODE BEGIN 2 */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_LWIP_Init();
+  MX_I2C1_Init();
+  MX_SPI1_Init();
+  MX_UART4_Init();
+  MX_FATFS_Init();
+  MX_I2C2_Init();
+  MX_UART5_Init();
+  /* USER CODE BEGIN 2 */
 	tcp_echoserver_init();
 	udp_echoclient_connect();
 
-  //int total = get_free_sd_card_space();
-
- // sprintf(buffer,"HELLO FREE SPACEAAA : %d",total);
-
-  //strcpy (buffer, "This is a new test- and it says Hello from controllerstech\n");
+ int total = get_free_sd_card_space();
+ char buffer[300] = {};
+  sprintf(buffer,"HELLO FREE SPACEAAA : %d",total);
 
 
-//  write_sd_card("FILE3.txt",&buffer,bufsize(buffer));
+  strcpy (buffer, "This is a new test- and it says Hello from controllerstech newzufutuzfggzuizguigzuzugzugguzzgugzuuzggzu\n");
 
-	uint32_t ms_start = HAL_GetTick();
+
+  write_sd_card("FILE55.txt",&buffer,bufsize(buffer));
+
+	uint32_t ms_start_pneu = HAL_GetTick();
+	uint32_t ms_start_pwr = HAL_GetTick();
+	uint32_t ms_start_amb = HAL_GetTick();
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+
+
   while (1)
   {
-		/* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
-		/* USER CODE BEGIN 3 */
+    /* USER CODE BEGIN 3 */
 		MX_LWIP_Process();
 
+		if ((HAL_GetTick() - ms_start_pneu) >= 10000) //every 1 sec.
+				{
+			//pneumatics data
+			struct pneumatics pneu;
 
+			pneu.pressure_tank = ((((MCP342X_adc_read_16bit(&hi2c1, 0x68,CHANNEL_2) * (125.f / 75.f)) - 0.25f) * 150) / (0.9f * 5.f))* 68.9476f;
+			pneu.pressure_outside_structures = 1200.8f;
+			pneu.pressure_inside_structures = 1178.6f;
+			udp_echoclient_send(data_down_pneumatics, &pneu, sizeof(pneu));
+			ms_start_pneu = HAL_GetTick();
 
+		}
 
+		if ((HAL_GetTick() - ms_start_pwr) >= 10000) //every 10 sec.
+				{
+			///power data
+			struct power pwr;
+			pwr.voltage_bexus = rd(MCP342X_adc_read_16bit(&hi2c1,I2C_ADRESS_POWER_ADC, CHANNEL_4) * 13.f);
+			pwr.voltage_extra = rd(MCP342X_adc_read_16bit(&hi2c1,I2C_ADRESS_POWER_ADC, CHANNEL_3) * 13.f);
+#define sensitivity 0.185f
+			pwr.current_bexus = rd(((MCP342X_adc_read_16bit(&hi2c1,I2C_ADRESS_POWER_ADC, CHANNEL_1) * 2.f) - 2.426f) / sensitivity);
+			pwr.current_extra = rd(((MCP342X_adc_read_16bit(&hi2c1,I2C_ADRESS_POWER_ADC, CHANNEL_2) * 2.f) - 2.4328f) / sensitivity);
+			udp_echoclient_send(data_down_power, &pwr, sizeof(pwr));
+			ms_start_pwr = HAL_GetTick();
 
-		if((HAL_GetTick() - ms_start) >= 10000) //every 10 sec.
-		{
+		}
 
+		if ((HAL_GetTick() - ms_start_amb) >= 10000) //every 60 sec.
+				{
 			//enviromental data
 			struct enviromental env;
 			env.pressure = 50.f;
-			env.temp_inside = 90.f;
+
+			float v_temp_inside = MCP342X_adc_read_16bit(&hi2c1,0x69, CHANNEL_2);
+			env.temp_inside = (1.f/((1.f/298.15f) + (1.f/3492.f) * log((v_temp_inside*10000)/(3.3f-v_temp_inside)/10000)))-273.15f;
+
+
+
 			env.temp_outside = 70.f;
-			udp_echoclient_send(data_down_enviromental,&env,sizeof(env));
-
-
-			//power data
-			struct power pwr;
-			pwr.voltage_bexus = 28.8f;
-			pwr.voltage_extra = 21.6f;
-			pwr.current_bexus = 1.4f;
-			pwr.current_extra = 0.89f;
-			udp_echoclient_send(data_down_power,&pwr,sizeof(pwr));
-
-			//pneumatics data
-			struct pneumatics pneu;
-			pneu.pressure_tank = 10001.3f;
-			pneu.pressure_outside_structures = 1200.8f;
-			pneu.pressure_inside_structures = 1178.6f;
-			udp_echoclient_send(data_down_pneumatics,&pneu,sizeof(pneu));
-
-
-			ms_start = HAL_GetTick();
+			udp_echoclient_send(data_down_enviromental, &env, sizeof(env));
+			ms_start_amb = HAL_GetTick();
 		}
-
-
 
 		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13)) {
 
-
-			float value = 0.f;
-			value = MCP3425_adc_read_16bit(&hi2c1);
-
-			//camera_control(&huart4,CAMERA_TOGGLE_ON_OFF);
-			//float temp = MCP9804_temperature_read(&hi2c1);
-			printf("%d \n",(int)value);
 
 			HAL_Delay(50);
 
 		}
 
 	}
-	/* USER CODE END 3 */
+  /* USER CODE END 3 */
 }
 
 /**
- * @brief System Clock Configuration
- * @retval None
- */
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -283,9 +296,12 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_I2C1;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_UART5
+                              |RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2;
   PeriphClkInitStruct.Uart4ClockSelection = RCC_UART4CLKSOURCE_PCLK1;
+  PeriphClkInitStruct.Uart5ClockSelection = RCC_UART5CLKSOURCE_PCLK1;
   PeriphClkInitStruct.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
+  PeriphClkInitStruct.I2c2ClockSelection = RCC_I2C2CLKSOURCE_PCLK1;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();

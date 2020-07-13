@@ -3,6 +3,7 @@
 #include "lwip/tcp.h"
 
 #include "ethernet_defines.h"
+#include "..//message_ids.h"
 
 static struct tcp_pcb *tcp_echoserver_pcb;
 
@@ -201,35 +202,211 @@ static err_t tcp_echoserver_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p
     {
       es->p = p;
 
-      char test_array[90] = {};
+			char data_received[100] = { }; //payload buffer
+			int data_size = p->len;
+
+			if (data_size <= sizeof(data_received)) {
+				memcpy(&data_received, p->payload, data_size); //copy tcp payload in buffer
+
+				char message_id = data_received[0]; //first byte is message id
+
+				char data_send[10] = { };
+				switch (message_id) {
+				case tcp_ping:
 
 
-         memcpy(&test_array,p->payload,p->len);
+					data_send[0] = tcp_pong;
+
+					es->p->payload = (void*) &data_send;
+					//es->p->len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+				case exp_release_structures:
 
 
-         int message_id = (int)test_array[0];
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
 
-         switch(message_id)
-         {
-           case 2:
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
 
-         	  test_array[0] = (char)0x3;
-         	  es->p->payload = (void*)&test_array;
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
 
-             break;
-         }
+					break;
+
+				case exp_uv_on:
 
 
-      /* send back received data */
-      tcp_echoserver_send(tpcb, es);
-    }
-    else
-    {
-      struct pbuf *ptr;
+					if(data_received[1] == 1)
+					{
+						HAL_GPIO_WritePin(GPIO_LED_1_GPIO_Port, GPIO_LED_1_Pin, GPIO_PIN_SET);
+					}
+					else if(data_received[1] == 2)
+					{
+						HAL_GPIO_WritePin(GPIO_LED_2_GPIO_Port, GPIO_LED_2_Pin, GPIO_PIN_SET);
+					}
 
-      /* chain pbufs to the end of what we recv'ed previously  */
-      ptr = es->p;
-      pbuf_chain(ptr,p);
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
+
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+				case exp_uv_off:
+
+					if (data_received[1] == 1) {
+						HAL_GPIO_WritePin(GPIO_LED_1_GPIO_Port, GPIO_LED_1_Pin,
+								GPIO_PIN_RESET);
+					} else if (data_received[1] == 2) {
+						HAL_GPIO_WritePin(GPIO_LED_2_GPIO_Port, GPIO_LED_2_Pin,
+								GPIO_PIN_RESET);
+					}
+
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
+
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+				case exp_valves_manual_on:
+
+					if (data_received[1] == 1) {
+						HAL_GPIO_WritePin(GPIO_V1_GPIO_Port, GPIO_V1_Pin,
+								GPIO_PIN_SET);
+					} else if (data_received[1] == 2) {
+						HAL_GPIO_WritePin(GPIO_V2_GPIO_Port, GPIO_V2_Pin,
+								GPIO_PIN_SET);
+					} else if (data_received[1] == 3) {
+						HAL_GPIO_WritePin(GPIO_V3_GPIO_Port, GPIO_V3_Pin,
+								GPIO_PIN_SET);
+					} else if (data_received[1] == 4) {
+						HAL_GPIO_WritePin(GPIO_V4_GPIO_Port, GPIO_V4_Pin,
+								GPIO_PIN_SET);
+					}
+
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
+
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+				case exp_valves_manual_off:
+
+					if (data_received[1] == 1) {
+						HAL_GPIO_WritePin(GPIO_V1_GPIO_Port, GPIO_V1_Pin,
+								GPIO_PIN_RESET);
+					} else if (data_received[1] == 2) {
+						HAL_GPIO_WritePin(GPIO_V2_GPIO_Port, GPIO_V2_Pin,
+								GPIO_PIN_RESET);
+					} else if (data_received[1] == 3) {
+						HAL_GPIO_WritePin(GPIO_V3_GPIO_Port, GPIO_V3_Pin,
+								GPIO_PIN_RESET);
+					} else if (data_received[1] == 4) {
+						HAL_GPIO_WritePin(GPIO_V4_GPIO_Port, GPIO_V4_Pin,
+								GPIO_PIN_RESET);
+					}
+
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
+
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+				case exp_start_inflation:
+
+					if (data_received[1] == 1) {
+						HAL_GPIO_WritePin(GPIO_V1_GPIO_Port, GPIO_V1_Pin,
+								GPIO_PIN_SET);
+						HAL_GPIO_WritePin(GPIO_V2_GPIO_Port, GPIO_V2_Pin,
+														GPIO_PIN_SET);
+					} else if (data_received[1] == 2) {
+						HAL_GPIO_WritePin(GPIO_V3_GPIO_Port, GPIO_V3_Pin,
+								GPIO_PIN_SET);
+						HAL_GPIO_WritePin(GPIO_V4_GPIO_Port, GPIO_V4_Pin,
+														GPIO_PIN_SET);
+					}
+
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
+
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+				case exp_stop_inflation:
+
+					if (data_received[1] == 1) {
+						HAL_GPIO_WritePin(GPIO_V1_GPIO_Port, GPIO_V1_Pin,
+								GPIO_PIN_RESET);
+						HAL_GPIO_WritePin(GPIO_V2_GPIO_Port, GPIO_V2_Pin,
+								GPIO_PIN_RESET);
+					} else if (data_received[1] == 2) {
+						HAL_GPIO_WritePin(GPIO_V3_GPIO_Port, GPIO_V3_Pin,
+								GPIO_PIN_RESET);
+						HAL_GPIO_WritePin(GPIO_V4_GPIO_Port, GPIO_V4_Pin,
+								GPIO_PIN_RESET);
+					}
+
+					data_send[0] = tcp_ok;
+					data_send[1] = message_id;
+
+					es->p->payload = (void*) &data_send;
+					es->p->len = 2;
+					es->p->tot_len = 2;
+
+					/* send back received data */
+					tcp_echoserver_send(tpcb, es);
+
+					break;
+
+
+
+
+				}
+
+			}
+
+		} else {
+			struct pbuf *ptr;
+
+			/* chain pbufs to the end of what we recv'ed previously  */
+			ptr = es->p;
+			pbuf_chain(ptr, p);
     }
     ret_err = ERR_OK;
   }
